@@ -1,0 +1,100 @@
+---
+title: "Preditcing Exercise with Machine Learning"
+author: "Will G"
+date: "December 07, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+This project set out to predict the manner in which test subjects exercise. This included pre processing the dataset, making a portion of the training dataset a validation subset, and then using the most accurate model to make predictions on 20 different test cases coming from the pml-testing dataset.
+
+The testing and training data is available at the urls below:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+The source of this data is here:
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+A special thanks for providing their data for this analysis.
+
+## Environment and Raw Data
+It is assumed that the working directory is set and the data was downloaded to that directory.
+```{r}
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+set.seed(34876)
+train <- read.csv("./pml-training.csv")
+testing <- read.csv("./pml-testing.csv")
+```
+
+## Preprocessing Data
+```{r}
+nearZero <- nearZeroVar(train)
+trainZ <- train[, -nearZero]
+funcTN <- sapply(trainZ, function(x) mean(is.na(x))) > .9 
+trainNA <- trainZ[, funcTN == FALSE]
+trainPre <- trainNA[, -(1:5)]
+train7 <- createDataPartition(trainPre$classe, p = 0.7, list = FALSE)
+train70 <- trainPre[train7,]
+test30 <- trainPre[-train7,]
+```
+
+The pml-training data was processed in the following ways: the near zero variance variables were identified then removed. The majority NA variables were then removed, finally the first 5 columns, which was just subject information and timestamps were removed.
+
+This processed dataset was split into two datasets: 70% retained to train the models, 30% used to test the models for cross validation purposes.
+
+The column that is being predicted is the Classe column which represents 5 different exercise types, three models were built below to try and predict what exercise each subject would do and all three models were cross validated with the test30 dataset before one was picked to use on the testing dataset.
+
+## Prediction Models
+
+The first model to be trained and tested is the decision tree model The decision tree can be seen below
+
+```{r}
+decTree <- rpart(classe~ ., data = train70, method = "class")
+fancyRpartPlot(decTree, sub = "")
+```
+
+```{r}
+pDecT <- predict(decTree, newdata = test30, type = "class")
+confMatTree <- confusionMatrix(pDecT, test30$classe)
+confMatTree
+```
+As seen above the decision tree is only 73.93% Accurate with an error of 26.07%, this is accurate but not accurate enough for further exploration.
+
+The next model being tested is the Generalized Boosted Model below:
+
+```{r}
+contgbm <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+fitgbm <- train(classe ~ ., data = train70, method = "gbm", trControl = contgbm, verbose = FALSE)
+fitgbm$finalModel
+pregbm <- predict(fitgbm, newdata=test30)
+confMatGbm <- confusionMatrix(pregbm, test30$classe)
+confMatGbm
+```
+
+This model is very accurate, 98.76% accurate with a 1.24% error but not accurate enough to not explore random forest prediction
+
+The model being tested below is a random forest model
+```{r}
+randomF <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+modRF <- train(classe ~ ., data=train70, method = "rf", trControl = randomF)
+modRF$finalModel
+predictRF <- predict(modRF, newdata = test30)
+confMatRF <- confusionMatrix(predictRF, test30$classe)
+confMatRF
+```
+
+This model is 99.8% accurate with an error of 0.2%, this is the best model to use when predicting what type of exercise the subjects will complete.
+The random forest model is the best fit for this problem and will be used for the prediction of the 20 test cases.
+
+## Prediction on Quiz
+The code below (if printed) gives the predictions to the quiz which were 100% accurate, the random forest model was used because it was the most accurate. 
+```{r}
+predictQuiz <- predict(modRF, newdata = testing)
+```
+
